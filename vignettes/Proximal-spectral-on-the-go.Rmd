@@ -1,0 +1,301 @@
+---
+title: "Preprocessing and modeling on-the-go spectral data for SOC prediction"
+author: "SOCmonit project team"
+date: "2023-06-01"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Preprocessing and modeling on-the-go spectral data for SOC prediction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+library(SOCmonit)
+```
+
+## Introduction
+
+Welcome to the vignette on preprocessing and modeling on-the-go spectral data for SOC prediction using the SOCmonit package. This vignette provides a comprehensive guide to the various steps involved in analyzing on-the-go spectral data and building predictive models for soil organic carbon (SOC) prediction.
+
+The data used in this vignette is obtained from the SOCmonit project, which collected on-the-go spectral data and soil samples from a long-term experiment (LTE) conducted in Bad Lauchstädt (Statischer Düngungsversuch V120). The LTE is specifically designed for fertilization experiments and consists of various plot treatments that aim to investigate the effects of different fertilization strategies on soil properties.
+
+The SOCmonit package is designed to handle on-the-go spectral data, offering a range of functions for data preprocessing, model training, and spatial interpolation. By following this vignette, you will learn how to read and test on-the-go spectral data from the SOCmonit project, integrate it with soil data, preprocess the spectral data, create a k-fold list for cross-validation, apply Partial Least Squares (PLS) modeling, and perform spatial interpolation through ordinary kriging.
+
+Analyzing and predicting SOC levels from on-the-go spectral data is crucial for agricultural and environmental research. By understanding the impact of different fertilization strategies on SOC levels, we can make informed decisions regarding soil management and sustainable agricultural practices.
+
+This vignette will walk you through each step of the analysis process, explaining the functions and methods used along the way. By the end of this vignette, you will be equipped with the knowledge and tools to effectively preprocess on-the-go spectral data, build reliable SOC prediction models, and visualize the results through spatial interpolation.
+
+
+## Reading and testing on-the-go spectral data
+
+Reading spectral data is the first step in the spectral analysis. It involves importing the spectral data from an external file into the R environment. In the SOCmonit package, the rd.spec.otg function is used for this purpose. This function reads the spectral data and creates a spatial data frame object, and automatically prints a map of the point locations.
+
+```{r, fig.height = 6, fig.width =6, mar=c(1,1,1,1)}
+# Read spectral data
+spectra_data<-rd.spec.otg(system.file("extdata/spec.onthego.csv", package="SOCmonit"),
+                          type="csv", spec.columns =  c(4:117, 128:347), xcoord = "x", 
+                        ycoord = "y",non.duplicates = T, projection = "+init=epsg:25832")
+
+spectra_data@data[1:10, 1:10]
+```
+The rd.spec.otg function takes the path to the spectral data file (system.file("extdata/spec.onthego.csv", package = "SOCmonit")) and other parameters such as the file type (type = "csv"), the columns containing the spectral data (spec.columns), the x-coordinate column name (xcoord), the y-coordinate column name (ycoord), whether to remove duplicate observations (non.duplicates), and the projection information (projection).
+
+After reading the spectral data, we can proceed with loading the Long-Term Experiment (LTE) map using the rd.LTE function. This function reads the LTE map file (e.g., shapefile) and extracts the necessary information for further analysis.
+
+```{r, fig.height = 5, fig.width =5, mar=c(1,1,1,1)}
+#load LTE map
+LTE_plots<-rd.LTE(system.file("extdata/LTE.shp", package="SOCmonit"), ID.plot="ID_plot")
+
+
+```
+
+The rd.LTE function takes the path to the LTE map file (system.file("extdata/LTE.shp", package = "SOCmonit")) and the column name that represents the plot ID (ID.plot). It returns the LTE map data and automatically prints a map of the LTE plots.
+
+Next, we add the ID.plot information from the LTE map to the spectral data. This allows us to associate each spectral measurement with its corresponding plot ID.
+
+```{r}
+#Add Id.plot to the spectral data
+LTE_plots<-sp::spTransform(LTE_plots, spectra_data@proj4string)
+IDS<-sp::over(spectra_data,LTE_plots)
+spectra_data$ID.plot<-IDS$ID.plot
+```
+
+Finally, we can test the spectral data for outliers using the test.spec.otg function. This function identifies and removes outliers based on the specified criteria, such as the ID.plot separation and the explained variance threshold.
+
+```{r}
+
+# Test spectral data
+
+test_results<-test.spec.otg (spectra_data@data, columns = 2:335, ID.plot="ID.plot",
+                             ID.otg = "ID.otg", outliers_by_id_plot =T, explvar = 0.75)
+
+```
+
+By following these steps, we successfully read the on-the-go spectral data, loaded and visualized the LTE map, associated plot IDs with the spectral data, and tested the data for outliers. This prepares the spectral data for further analysis and modeling.
+
+## Reading soil data
+
+For model building we can read soil data from external files using the `rd.soildata` function. This function reads soil data from CSV or plain text files:
+
+```{r, fig.height = 5, fig.width =5, mar=c(1,1,1,1)}
+# Read soil data
+soil_data <- rd.soildata(file = system.file("extdata/socdata.csv", package = "SOCmonit"), 
+                         type = "csv", soc.values = "C", ID.sample = "Code", 
+                         ID.point ="ID", average_by_point = T)
+
+head(soil_data)
+```
+
+The `rd.soildata` function reads the soil data, specifying the column names for the SOC values, sample ID, and point ID. The `average_by_point` argument determines whether the data should be averaged by point. In this example, we read the soil data with averaging.
+
+## Reading and Visualizing Sampling Points
+
+We can read sampling points coordinates from a file and visualize them on a scatter plot using the `rd.spoints` function:
+
+```{r, fig.height = 5, fig.width =5, mar=c(1,1,1,1)}
+# Read and visualize sampling points
+sampling_points <- rd.spoints(file = system.file("extdata/xy.points.csv",
+                              package = "SOCmonit"), type = "csv", xcoord = "East",
+                      ycoord = "North", ID.point = "ID", projection = "+init=epsg:25832")
+
+head(sampling_points)
+```
+
+The `rd.spoints` function reads the sampling points' coordinates from a file, specifying the column names for the x-axis and y-axis coordinates. The `ID.point` parameter is optional and represents the point ID column name. The `projection` argument allows specifying the projection information if the data is in spatial format. In this example, we read the sampling points' coordinates from a CSV file and automatically plot them on a scatter plot.
+
+## Preprocessing Veris data
+
+In the "Preprocessing Veris data" section, we perform preprocessing on the spectral data using the pp.spec function in the SOCmonit package. Preprocessing is an essential step in spectral analysis as it helps remove noise and enhance the quality of the data.
+
+Here is a step-by-step description of the preprocessing process:
+
+Subset the spectral data: We start by subsetting the spectra_data object to include only the observations that passed the outlier detection step. This is done using the subset function and filtering the data based on the ID.otg values from the test_results object.
+
+```{r}
+# Preprocess Veris data
+spectra_data_no<- subset(spectra_data, spectra_data$ID.otg %in% test_results$Individual_results$No_outliers$ID.otg)
+```
+
+Compile spectra information: Next, we use the compilePR.spec.otg function to compile the spectral data used for model building. We provide the preprocessed data (spectra_data_no), the spatial points (sampling_points), the neighborhood size (nb), and the plot and point ID columns (ID.point and ID.plot). This step helps incorporate neighboring information and improve the accuracy of the spectral data.
+
+```{r}
+spectra_data_pred <- compilePR.spec.otg(x = spectra_data_no, sp.points = sampling_points,
+                                        nb = 10, ID.point = "ID.point", 
+                                        ID.plot = "ID.plot", LTE = LTE_plots)
+```
+
+Average spectral data: To further improve the quality of the data, we aggregate the spectral data by taking the mean of each spectral variable for each ID.point. This step helps reduce the variability within each location and provides more reliable data for analysis.
+
+```{r}
+#Average spectral data
+spectra_data_pred<-aggregate(spectra_data_pred[, 6:339], by = list(spectra_data_pred$ID.point), FUN = mean)
+```
+
+Finally, we apply the Standard Normal Variate (SNV) preprocessing method to the preprocessed spectral data using the pp.spec function. SNV is a commonly used method that helps normalize the spectral data by subtracting the mean and dividing by the standard deviation. We specify the columns to be preprocessed (columns = 2:335) and the preprocessing method (pp.method = "snv").
+
+```{r}
+pp_Veris <- pp.spec(spectra_data_pred, columns = 2:335, pp.method = "snv")
+```
+
+By following these preprocessing steps, we effectively remove noise, incorporate neighboring information, and improve the quality of the spectral data. This prepares the data for further analysis and modeling, leading to more accurate and reliable results.
+ 
+## Creating a K-Fold list
+
+Cross-validation is a technique for assessing how the results of a statistical analysis will generalize to an independent data set. In the SOCmonit package, the `CV.folds.list` function is available to create a list of stratified k-fold divisions for cross-validation.
+
+The `CV.folds.list` function takes several input parameters, including the number of folds (`nfold`), external repetitions (`ext.rep`), internal repetitions (`int.rep`), minimum distance (`min.dist`), sample ID (`ID.point`), SOC values (`soc.values`), and spatial coordinates (`xcoord` and `ycoord`). This function generates a list of train and test sets based on the specified parameters, while considering spatial autocorrelation and a minimum distance threshold.
+
+The `CV.folds.list` function internally uses the `CV.folds` function to perform k-fold sampling with spatial neighbor constraints. The `CV.folds` function considers the spatial coordinates and applies a minimum distance threshold to ensure that samples within the specified distance are placed within the same fold.
+
+Here is an example of how to use the `CV.folds.list` function:
+
+```{r}
+# Generate K-fold list
+fold_list <- CV.folds.list(nfold = 5, ext.rep = 5, int.rep = 5, min.dist = 8,
+             ID.point = soil_data$ID.point, soc.values = soil_data$soc.values, 
+             xcoord = sampling_points$xcoord, ycoord = sampling_points$ycoord,
+             stratified=T)
+
+head(fold_list[[1]])
+```
+
+In the example above, we generate a k-fold list with 5 folds, 5 external repetitions, 5 internal repetitions, and a minimum distance of 8. We provide the necessary input data, including sample ID, SOC values, and spatial coordinates. The resulting fold_list is a list containing the train and test sets for each fold and repetition, taking into account spatial autocorrelation and the minimum distance threshold.
+
+You can access the individual train and test sets from the fold_list object to perform cross-validation analysis on your data.
+
+## Applying PLS modeling
+
+On this step we apply PLS modeling to the combined spectral and soil data using the `apply.model.pls` function:
+
+```{r, results='hide'}
+# Apply PLS modeling
+model_pls <- apply.model.pls(spec=pp_Veris[, -1], soc = soil_data, fold.rep = fold_list,
+             ncomp = 25, ext.rep = 5, int.rep = 5, nfold = 5)
+```
+
+The `apply.model.pls` function takes the preprocessed spectral data (`spec`), the SOC values (`soc`), the fold list (`fold.rep`), the number of components (`ncomp`), and additional parameters for external repetitions (`ext.rep`), internal repetitions (`int.rep`), and number of folds (`nfold`). It applies PLS modeling to the combined data and returns the results in the `model_pls` object.
+
+The `Predictions` component contains the predicted SOC values for the test data in each repetition. You can access the predicted values using the `$Predictions` sub-component of the `model_pls` object.
+
+```{r}
+head(model_pls$Predictions)
+```
+
+The `Models component`  is a list containing the individual PLS regression models used for external prediction. Each model corresponds to a specific fold in the cross-validation process.  You can access the individual models using the `$Models` sub-component of the `model_pls` object.
+
+The `Opt. Comp.` object  provides the optimal number of components determined for each model. This is based on the lowest Root Mean Squared Error (RMSE) value obtained during the internal cross-validation. You can access the optimal number of components using the following code:
+
+```{r}
+model_pls$`Opt. Comp.`
+```
+The `Error metrics` component provides error metrics to evaluate the performance of the PLS models. These metrics include Root Mean Squared Error (RMSE), R-squared (R2), and Ratio of Performance to InterQuartile distance (RPIQ). You can access the error metrics using the following code:
+
+```{r}
+model_pls$`Error metrics`
+```
+
+## Plotting PLS regression results
+
+You can use the plot.pls.results function to visualize the results of the PLS regression:
+
+```{r,  fig.height = 5, fig.width = 7, mar=c(1,1,1,1)}
+# Plot PLS regression results
+pls.results.plot(model_pls)
+
+```
+This function will generate separate plots for the scatter plot of actual vs. predicted values, residual plots, and bar plots for the optimal number of components.
+
+
+## Spatial interpolation and mapping
+
+
+Once the PLS model is applied, we can proceed with spatial interpolation to estimate SOC values at unmeasured locations based on the measured values at nearby locations. In this example, we will use the first PLS model created in the previous analysis to predict SOC values for all the on-the-go Veris data, excluding outliers.
+
+```{r, fig.height = 5, fig.width = 7, mar=c(1,1,1,1)}
+
+#predictions on the Veris data
+
+
+pp_veris_all <- pp.spec(spectra_data_no@data, columns = 2:335, pp.method = "snv") #preprocessing method according with the one used for model building.
+
+
+model<-model_pls$Models$`1`$`1`
+
+x_veris<- as.matrix( pp_veris_all[,2:335])
+
+pred_veris  <- predict(model, newdata = x_veris, ncomp = model_pls$`Opt. Comp.`[1])   # prediction of SOC
+
+spectra_data_no$soc.value<-pred_veris
+
+#remove outliers of SOC predictions
+q<-quantile(spectra_data_no$soc.value, c(0.01, 0.99))
+
+spectra_data_no<-subset(spectra_data_no, soc.value>q[[1]] & soc.value<q[[2]] )
+
+```
+
+In the above code, we preprocess the Veris data using the same preprocessing method (Standard Normal Variate - SNV) as used during model building. The pp.spec function is applied to the `spectra_data_no@data` object, considering columns 2 to 335 (columns = 2:335) for preprocessing. This step ensures consistency between the input data used for model training and the data used for prediction.
+
+Next, we retrieve the first PLS model from the model_pls object and store it in the model variable. We convert the preprocessed Veris data (pp_veris_all[, 2:335]) into a matrix format (x_veris) suitable for prediction. Using the predict function, we generate SOC predictions (pred_veris) based on the first PLS model and the preprocessed Veris data. The number of components used for prediction is obtained from model_pls$Opt. Comp.[1].
+
+To incorporate the predicted SOC values into the spectra_data_no object, we assign them to the soc.value column. We then remove outliers from the predicted SOC values by calculating the 1st and 99th percentiles using the quantile function. Any values below the 1st percentile or above the 99th percentile are considered outliers, and we subset spectra_data_no accordingly.
+
+With the Veris data predictions available, we can proceed to the next step of spatial interpolation, which involves generating a variogram model.
+
+
+```{r, fig.height = 5, fig.width = 7, mar=c(1,1,1,1)}
+
+#Create variogram model
+model_vg<-apply.model.vgm(spectra_data_no$soc.value, xcoord =spectra_data_no@coords[,1],
+                          ycoord =spectra_data_no@coords[,2], v.model = "Exp" , 
+                          parameters = c(nugget = 5, p.sill=5, range=10))
+
+```
+
+In the code above, the apply.model.vgm function is used to generate a variogram model. It takes SOC values (spectra_data_no$soc.value) and their geographic coordinates (xcoord and ycoord) as inputs. The v.model parameter is set to "Exp" to specify an exponential variogram model. The parameters argument allows us to provide initial values for the nugget, partial sill, and range parameters of the variogram model.
+
+The apply.model.vgm function concludes by plotting the experimental variogram, the initial guess of the variogram model, and the final fitted variogram model. This visualization provides insights into the spatial structure and dependencies within the SOC data.
+
+Next, we use the generated variogram model as the basis for spatial interpolation via Kriging.
+
+```{r, fig.height = 5, fig.width = 7, mar=c(1,1,1,1)}
+
+#Apply OK interpolation
+Grid<- SOCmonit:::grid#load 1 m grid
+
+
+model_ok<-apply.model.krige(spectra_data_no, soc.values="soc.value", method = "OK",
+                            newdata=Grid, v.model=model_vg$model, maxdist=10)
+
+```
+
+The code above employs the apply.model.krige function to perform Ordinary Kriging interpolation. It takes the spectra_data_no object, SOC values column ("soc.value"), interpolation method ("OK" for Ordinary Kriging), the target locations for prediction (newdata), the variogram model (v.model), and a maximum distance threshold (maxdist) as inputs.
+
+The apply.model.krige function generates a map of the predicted SOC values (referred to as "Prediction") and the corresponding estimation variances (referred to as "Variance"). This dual visualization provides both the best-guess prediction and an estimation of the uncertainty associated with the predictions.
+
+It is possible to repeat the same procedure using all the PLS models (25 models in this vignette) to obtain a medium value representative of the SOC predictions.
+
+
+## Generating a report
+
+To generate a report summarizing the results, you can use the report.point.spec function. This function creates a PDF report with descriptions and visualizations of the objects for: spectral data, soil data, sampling points, preprocessed data, k-fold list, and PLS modeling results. Each object is an optional input.
+
+**Note**: If TinyTeX is not installed on the system, this function will automatically install it to ensure proper LaTeX compilation for generating the report.
+
+Here is an example of how to use the function:
+
+```{r, eval=FALSE}
+#Summary report
+report.otg.spec(output_dir = getwd(), output_file = "report OTG spectral", 
+                spectra_data = spectra_data, soil_data = soil_data, 
+                sampling_points = sampling_points, pp_data = pp_Veris, 
+                fold_list = fold_list, model_pls = model_pls, 
+                model_vg=model_vg, model_ok=model_ok)
+
+```
+## Conclusion
+
+This vignette demonstrated the steps involved in preprocessing and modeling point spectral data for SOC prediction using the SOCmonit package. The process includes reading and testing point spectral data, reading soil data, preprocessing ASD data, creating a k-fold list for cross-validation, applying PLS modeling, and evaluating the performance of the models. By following these steps, users can effectively analyze spectral data, incorporate soil data, and build accurate SOC prediction models.
+
+For more information on the SOCmonit package and its functionalities, please refer to the package documentation and additional resources.

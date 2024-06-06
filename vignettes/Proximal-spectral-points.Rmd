@@ -1,0 +1,187 @@
+---
+title: "Preprocessing and modeling point spectral data for SOC prediction"
+author: "SOCmonit project team"
+date: "2023-06-01"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Preprocessing and modeling point spectral data for SOC prediction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+library(SOCmonit)
+```
+
+## Introduction
+
+Welcome to the vignette on preprocessing and modeling ASD spectral data for SOC prediction using the SOCmonit package. This vignette provides a comprehensive guide to the various steps involved in analyzing ASD spectral data and building predictive models for soil organic carbon (SOC) prediction.
+
+The SOCmonit package offers a range of functions for preprocessing spectral data, integrating soil data, creating k-fold cross-validation lists, and applying Partial Least Squares (PLS) modeling. By following this vignette, you will learn how to read and test ASD spectral data, import soil data, preprocess the spectral data, create a k-fold list for cross-validation, apply PLS modeling, and evaluate the performance of the models.
+
+The data used in this vignette is obtained from the SOCmonit project, which collected ASD spectral data and soil samples from a Long-Term Experiment (LTE) conducted in Bad Lauchstädt (Statischer Düngungsversuch V120). The LTE is a research initiative specifically designed for fertilization experiments and focuses on studying the effects of different fertilization strategies on soil properties.
+
+Through each step of the analysis process, we will demonstrate the functionalities of the SOCmonit package and provide detailed explanations of the methods and techniques used. By the end of this vignette, you will be equipped with the knowledge and tools to effectively preprocess ASD spectral data, build reliable SOC prediction models, and evaluate their performance.
+
+## Reading and testing point spectral data
+
+Reading spectral data is the first step in the spectral analysis. It involves importing the spectral data from an external file into the R environment. In the SOCmonit package, the `rd.spec.pts` function is used for this purpose.To correct the ASD data the spec columns should have the entire range provided by ASD data (350-2500 nm). It reads and corrects spectral data:
+
+```{r}
+# Read spectral data
+spectra_data <- rd.spec.pts(file = system.file("extdata/spec.points.csv", 
+                           package = "SOCmonit"), type = "csv", spec.columns = 1:2151,
+                           ID.point = "ID", ID.sample = "sample", 
+                           asd.corr = TRUE)
+spectra_data[1:10,1:10]
+```
+
+The `test.spec.pts` function identifies and removes outliers from spectral data. Outliers are observations that are numerically distant from the rest of the data. They can be caused by variability in the data or may indicate experimental errors. We can test the data in general or separation by ID location (which could be more appropriate when there is high variability between location). In this example we separate the outliers detection by `ID.point` and cut the borders of the ASD data.
+
+```{r}
+# Test spectral data
+test_results <- test.spec.pts(spectra_data, columns = 53:1953, ID.point = "ID.point",
+                              ID.sample = "ID.sample", outliers_by_id_point = TRUE,
+                              include_average = T)
+
+```
+
+## Reading soil data
+
+For model building we can read soil data from external files using the `rd.soildata` function. This function reads soil data from CSV or plain text files:
+
+```{r, fig.height = 5, fig.width =5, mar=c(1,1,1,1)}
+# Read soil data
+soil_data <- rd.soildata(file = system.file("extdata/socdata.csv", package = "SOCmonit"),
+                         type = "csv", soc.values = "C", ID.sample = "Code", 
+                         ID.point = "ID", average_by_point = T)
+
+head(soil_data)
+```
+
+The `rd.soildata` function reads the soil data, specifying the column names for the SOC values, sample ID, and point ID. The `average_by_point` argument determines whether the data should be averaged by point. In this example, we read the soil data with averaging.
+
+## Reading and Visualizing Sampling Points
+
+We can read sampling points coordinates from a file and visualize them on a scatter plot using the `rd.spoints` function:
+
+```{r, fig.height = 5, fig.width =5, mar=c(1,1,1,1)}
+# Read and visualize sampling points
+sampling_points <- rd.spoints(file = system.file("extdata/xy.points.csv", 
+                            package = "SOCmonit"), type = "csv", xcoord = "East",
+                      ycoord = "North", ID.point = "ID", projection = "+init=epsg:25832")
+
+head(sampling_points)
+```
+
+The `rd.spoints` function reads the sampling points' coordinates from a file, specifying the column names for the x-axis and y-axis coordinates. The `ID.point` parameter is optional and represents the point ID column name. The `projection` argument allows specifying the projection information if the data is in spatial format. In this example, we read the sampling points' coordinates from a CSV file and automatically plot them on a scatter plot.
+
+## Preprocessing ASD data
+
+After reading and testing the point spectral data, the next step is to preprocess the ASD data. Preprocessing is a critical step in spectral analysis as it helps to remove noise and improve the quality of the spectral data.
+
+In the SOCmonit package, the pp.spec function is used to apply various preprocessing methods to the spectral data. In this example, we will apply the Savitzky-Golay (sg) preprocessing method to the averaged spectral data without outliers.
+
+```{r}
+# Preprocess ASD data
+spectra_data<-test_results$Average_no_outliers
+colnames(spectra_data)[2:1902]<-400:2300
+
+pp_asd <- pp.spec(spectra_data, columns = 2:1902, pp.method = "sg")
+```
+
+In the code snippet above, we first assign the averaged spectral data without outliers to the spectra_data object. Next, we update the column names of the spectra_data object to match the wavelength range provided by the ASD data. Then, we apply the Savitzky-Golay (sg) preprocessing method to the spectral data using the `pp.spec` function. The columns parameter specifies the columns of the spectral data to be preprocessed, which in this case are columns 2 to 1902. The `pp.method` parameter is set to "sg" to apply the Savitzky-Golay smoothing method.
+
+The `pp.spec` function applies various preprocessing methods, such as continuum removal (cr), Savitzky-Golay smoothing (sg), detrend (dt), gap derivative (gd), moving average (ma), standard normal variate (snv), and more. You can choose the appropriate preprocessing method based on your data and analysis requirements.The `pp_asd` object now contains the preprocessed ASD data ready for further analysis, such as model training and prediction.
+
+## Creating a K-Fold list
+
+Cross-validation is a technique for assessing how the results of a statistical analysis will generalize to an independent data set. In the SOCmonit package, the `CV.folds.list` function is available to create a list of stratified k-fold divisions for cross-validation.
+
+The `CV.folds.list` function takes several input parameters, including the number of folds (`nfold`), external repetitions (`ext.rep`), internal repetitions (`int.rep`), minimum distance (`min.dist`), sample ID (`ID.point`), SOC values (`soc.values`), and spatial coordinates (`xcoord` and `ycoord`). This function generates a list of train and test sets based on the specified parameters, while considering spatial autocorrelation and a minimum distance threshold.
+
+The `CV.folds.list` function internally uses the `CV.folds` function to perform k-fold sampling with spatial neighbor constraints. The `CV.folds` function considers the spatial coordinates and applies a minimum distance threshold to ensure that samples within the specified distance are placed within the same fold.
+
+Here is an example of how to use the `CV.folds.list` function:
+
+```{r}
+# Generate K-fold list
+fold_list <- CV.folds.list(nfold = 5, ext.rep = 5, int.rep = 5, min.dist = 8, 
+                           ID.point = soil_data$ID.point,
+                           soc.values = soil_data$soc.values, 
+                           xcoord = sampling_points$xcoord,
+                           ycoord = sampling_points$ycoord)
+
+head(fold_list[[1]])
+
+```
+
+In the example above, we generate a k-fold list with 5 folds, 5 external repetitions, 5 internal repetitions, and a minimum distance of 8. We provide the necessary input data, including sample ID, SOC values, and spatial coordinates. The resulting fold_list is a list containing the train and test sets for each fold and repetition, taking into account spatial autocorrelation and the minimum distance threshold.
+
+You can access the individual train and test sets from the fold_list object to perform cross-validation analysis on your data.
+
+## Applying PLS modeling
+
+The final step is to apply PLS modeling to the combined spectral and soil data using the `apply.model.pls` function:
+
+```{r, results='hide'}
+# Apply PLS modeling
+model_pls <- apply.model.pls(spec=pp_asd[, 2:1902], soc = soil_data, 
+                             fold.rep = fold_list, ncomp = 25, ext.rep = 5, 
+                             int.rep = 5, nfold = 5)
+```
+
+The `apply.model.pls` function takes the preprocessed spectral data (`spec`), the SOC values (`soc`), the fold list (`fold.rep`), the number of components (`ncomp`), and additional parameters for external repetitions (`ext.rep`), internal repetitions (`int.rep`), and number of folds (`nfold`). It applies PLS modeling to the combined data and returns the results in the `model_pls` object.
+
+The `Predictions` component contains the predicted SOC values for the test data in each repetition. You can access the predicted values using the `$Predictions` sub-component of the `model_pls` object.
+```{r}
+head(model_pls$Predictions)
+```
+
+The `Models component`  is a list containing the individual PLS regression models used for external prediction. Each model corresponds to a specific fold in the cross-validation process.  You can access the individual models using the `$Models` sub-component of the `model_pls` object.
+
+The `Opt. Comp.` object  provides the optimal number of components determined for each model. This is based on the lowest Root Mean Squared Error (RMSE) value obtained during the internal cross-validation. You can access the optimal number of components using the following code:
+
+```{r}
+model_pls$`Opt. Comp.`
+```
+The `Error metrics` component provides error metrics to evaluate the performance of the PLS models. These metrics include Root Mean Squared Error (RMSE), R-squared (R2), and Ratio of Performance to InterQuartile distance (RPIQ). You can access the error metrics using the following code:
+
+```{r}
+model_pls$`Error metrics`
+```
+
+## Plotting PLS regression results
+
+You can use the plot.pls.results function to visualize the results of the PLS regression:
+
+
+```{r,  fig.height = 5, fig.width = 7, mar=c(1,1,1,1)}
+# Plot PLS regression results
+pls.results.plot(model_pls)
+
+```
+This function will generate separate plots for the scatter plot of actual vs. predicted values, residual plots, and bar plots for the optimal number of components.
+
+## Generating a report
+
+To generate a report summarizing the results, you can use the report.point.spec function. This function creates a PDF report with descriptions and visualizations of the objects for: spectral data, soil data, sampling points, preprocessed data, k-fold list, and PLS modeling results. Each object is an optional input.
+
+**Note**: If TinyTeX is not installed on the system, this function will automatically install it to ensure proper LaTeX compilation for generating the report.
+
+Here is an example of how to use the function:
+
+```{r, eval=FALSE}
+#Summary report
+report.point.spec(output_dir = getwd(), output_file = "report point spectral",
+                  spectra_data = spectra_data, soil_data = soil_data,
+                  sampling_points = sampling_points, pp_data = pp_asd,
+                  fold_list = fold_list, model_pls = model_pls)
+
+```
+## Conclusion
+
+This vignette demonstrated the steps involved in preprocessing and modeling point spectral data for SOC prediction using the SOCmonit package. The process includes reading and testing point spectral data, reading soil data, preprocessing ASD data, creating a k-fold list for cross-validation, applying PLS modeling, and evaluating the performance of the models. By following these steps, users can effectively analyze spectral data, incorporate soil data, and build accurate SOC prediction models.
+
+For more information on the SOCmonit package and its functionalities, please refer to the package documentation and additional resources.

@@ -1,0 +1,48 @@
+Package: SOCmonit
+Title: R toolbox to apply steps of preprocessing and modeling for SOC prediction
+Version: 0.1
+Authors@R: c(
+    person("Javier", "Reyes", role = c("aut", "cre"), email = "socmonitproject@gmail.com"),
+    person("Anna", "Brand", role = "aut", email = "brand@remote-sensing-solutions.com"),
+    person("Mareike", "Ließ", role = "ctb", email = "mareike.liess@hswt.de"),
+    person("Jonas", "Franke", role = "ctb", email = "franke@rssgmbh.de")
+    )
+Description: SOCmonit is an R toolbox designed to facilitate the preprocessing and modeling of soil organic carbon (SOC) prediction based on spectral data. The package provides a collection of functions and tools for reading, testing, and preprocessing spectral data, as well as creating cross-validation partitions and applying  modeling for SOC prediction. SOCmonit is particularly useful for researchers and practitioners working with remote sensing and soil data analysis. It integrates with other R packages to streamline the analysis workflow and generate comprehensive reports for SOC prediction.
+Depends: R (>= 3.5.0)
+Encoding: UTF-8
+LazyData: true
+License: GPL (>= 2)
+LicenseURL: https://www.gnu.org/licenses/gpl-2.0.html
+RoxygenNote: 7.3.1
+Imports: Cubist (>= 0.3.0), 
+    chillR (>= 0.72.7),
+    data.table (>= 1.14.2),
+    dplyr (>= 1.0.2),
+    earth (>= 5.3.1),
+    forcats (>= 0.5.0),
+    ggplot2 (>= 3.3.2),
+    gridExtra (>= 2.3),
+    gstat (>= 2.0.8),
+    knitr (>= 1.42),
+    mapproj (>= 1.2.8),
+    mltools (>= 0.3.5),
+    mvoutlier (>= 2.1.1),
+    pls (>= 2.8.0),
+    prospectr (>= 0.2.2),
+    purrr (>= 0.3.4),
+    randomForest (>= 3.4),
+    raster (>= 3.6.20),
+    readODS (>= 1.7.0),
+    readr (>= 1.4.0),
+    sp (>= 1.4),
+    stringr (>= 1.4.0),
+    tibble (>= 3.0.4),
+    tidyr (>= 1.2.2),
+    tidyverse (>= 1.3.0),
+    tinytex (>= 0.45),
+    wesanderson (>= 0.3.6)
+URL: https://github.com/jareym/SOCmonit
+BugReports: https://github.com/jareym/SOCmonit/issues
+Keywords: SOC, soil organic carbon, remote sensing, spectral data, PLS, modeling
+Acknowledgements: The development of this package was part of the SOCmonit project, supported by funds of the Federal Ministry of Food and Agriculture (BMEL) based on a decision of the Parliament of the Federal Republic of Germany via the Federal Office for Agriculture and Food (BLE) under the innovation support programme.
+VignetteBuilder: knitr
