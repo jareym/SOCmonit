@@ -52,7 +52,7 @@ Example data files are included in the package's extdata directory. These files 
 ## References
 - Reyes, J., Ließ, M. (2024). Spectral Data Processing for Field-Scale Soil Organic Carbon Monitoring. Sensors 24(3), 849. https://doi.org/10.3390/s24030849
 - Reyes, J., Ließ, M. (2023). On-the-Go Vis-NIR Spectroscopy for Field-Scale Spatial-Temporal Monitoring of Soil Organic Carbon. Agriculture 2023, 13, 1611. https://doi.org/10.3390/agriculture13081611
-- Reyes, J., Wiedemann, W., Brand, A., Franke, J., Ließ, M. (2024). Predictive monitoring of soil organic carbon using multispectral UAV imagery: a case study on a long-term experimental field. Spatial Information Research [accepted for publication 24 May 2024]
+- Reyes, J., Wiedemann, W., Brand, A., Franke, J., Ließ, M. (2024). Predictive monitoring of soil organic carbon using multispectral UAV imagery: a case study on a long-term experimental field. Spatial Information Research 1-14. https://doi.org/10.1007/s41324-024-00589-7
  
 
 ## Issues and Contributions
